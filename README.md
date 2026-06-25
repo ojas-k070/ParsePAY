@@ -35,7 +35,7 @@
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/yourusername/parsepay.git](https://github.com/yourusername/parsepay.git)
+   git clone https://github.com/ojas-k070/ParsePAY.git
 2.**Install dependencies:**
 pip install -r requirements.txt
 
