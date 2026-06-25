@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to ParsePAY | Access Dashboard</title>
+    <!-- Google Fonts for premium typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dashboard-body login-body">
+
+    <!-- Floating Theme Toggle Button -->
+    <button class="theme-toggle-float" onclick="toggleTheme()" title="Toggle Light/Dark Theme">
+        <span id="theme-icon">☀️</span>
+    </button>
+
+    <div class="login-wrapper">
+        
+        <!-- Logo and App Name -->
+        <div class="login-logo-container">
+            <div class="rupee-icon">₹</div>
+            <h1>ParsePAY</h1>
+            <p class="tagline">Personalized Bank Statement Analytics</p>
+        </div>
+
+        <!-- Glassmorphic Form Container -->
+        <div class="login-card glass">
+            
+            <!-- Tabs to toggle between Login & Register -->
+            <div class="login-tabs">
+                <button class="tab-btn active" onclick="switchTab('login-tab', event)">Access Profile</button>
+                <button class="tab-btn" onclick="switchTab('register-tab', event)">New Profile</button>
+            </div>
+
+            <!-- Display Flash Messages inside Card -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div id="flash-messages" style="margin-top: 15px;">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% endwith %}
+
+            <!-- Tab 1: Access Profile -->
+            <div id="login-tab" class="tab-content active">
+                <form action="/login-profile" method="POST">
+                    <div class="form-group">
+                        <label for="user_id">Enter Your Profile User ID</label>
+                        <input type="text" id="user_id" name="user_id" placeholder="e.g. RS-1234" autocomplete="off" required>
+                        <span class="help-text">Your generated ID is required to reload your statement history.</span>
+                    </div>
+                    <button type="submit" class="primary-btn">Open Dashboard</button>
+                </form>
+            </div>
+
+            <!-- Tab 2: Create New Profile -->
+            <div id="register-tab" class="tab-content">
+                <form action="/create-profile" method="POST">
+                    <div class="form-group">
+                        <label for="username">Your Name / Profile Name</label>
+                        <input type="text" id="username" name="username" placeholder="e.g. Ojas Kulkarni" autocomplete="off" required>
+                        <span class="help-text">Creating a profile generates a unique ID. Write it down to access your data later!</span>
+                    </div>
+                    <button type="submit" class="primary-btn">Create Profile</button>
+                </form>
+            </div>
+
+        </div>
+
+        <!-- Extra details/security note -->
+        <div class="privacy-note">
+            <p>🔒 **Privacy Assurance**: Your transaction details are stored locally on your unique profile database and are never shared or made visible to other visitors.</p>
+        </div>
+
+    </div>
+
+    <script>
+        function switchTab(tabId, event) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
+        }
+
+        // Theme Toggle Logic
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            if (savedTheme === 'light') {
+                document.body.classList.add('light-theme');
+                document.getElementById('theme-icon').textContent = '🌙';
+            } else {
+                document.body.classList.remove('light-theme');
+                document.getElementById('theme-icon').textContent = '☀️';
+            }
+        }
+
+        function toggleTheme() {
+            const isLight = document.body.classList.toggle('light-theme');
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+            document.getElementById('theme-icon').textContent = isLight ? '🌙' : '☀️';
+        }
+
+        document.addEventListener('DOMContentLoaded', initTheme);
+    </script>
+
+</body>
+</html>

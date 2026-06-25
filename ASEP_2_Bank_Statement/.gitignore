@@ -1,0 +1,27 @@
+# Virtual Environment
+venv/
+env/
+.venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local Databases, ML models and Secrets
+instance/
+*.db
+*.pkl
+.env
+.env.*
+
+# Uploads and Processed outputs (User bank statements and generated spreadsheets)
+uploads/
+processed/
+
+# OS and Editor configs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
