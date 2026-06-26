@@ -1,77 +1,81 @@
-# Bank Statement Analysis Application
+<div align="center">
 
-A Flask-based web application to parse bank statements in PDF format, extract transactions and opening/closing balances, classify transaction categories using Naive Bayes machine learning and keyword matching, and export the processed data to CSV/Excel.
+# ParsePAY
+*Intelligent Financial Intelligence Platform*
+
+[![Python](https://img.shields.io/badge/python-3.x-blue.svg)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/flask-2.x-lightgrey.svg)](https://flask.palletsprojects.com/)
+[![Status](https://img.shields.io/badge/status-active-green.svg)]()
+
+</div>
+
+## 📖 Overview
+**ParsePAY** is an AI-powered financial reconciliation platform designed to solve the problem of fragmented banking data. Traditional finance tools often struggle with inconsistent bank statement formats and "noisy" data like internal transfers. ParsePAY normalizes these inputs, intelligently categorizes transactions, and provides clear insights into actual personal cash flow.
+
+## 🚀 Key Features
+
+* **Universal Parsing Engine:** Decouples raw document ingestion from financial logic, supporting heterogeneous PDF layouts.
+* **Persistent ML Categorization:** A learning-based classification layer that remembers manual user overrides, improving accuracy over time.
+* **Smart Reconciliation:** Custom filtering logic to identify and net out self-transfers (e.g., wallet loads, bank-to-bank transfers), preventing the artificial inflation of income and expense metrics.
+* **Schema Normalization:** Converts messy, varying bank statement formats into a standard, clean schema for deep analytics.
+
+## 🛠 Tech Stack
+
+* **Backend:** Python, Flask
+* **Data Extraction:** `pdfminer.six` / Layout analysis
+* **Intelligence:** Scikit-Learn (Naive Bayes for classification)
+* **Frontend:** React SPA (Vite, Chart.js, Vanilla CSS)
+* **Storage:** SQLite (for persistent keyword-to-category mapping)
+
+## 💡 Engineering Highlights
+* **Separation of Concerns:** The system architecture separates the *data extraction layer* from the *business intelligence layer*, making it modular and adaptable to new bank statement formats.
+* **Data Integrity:** By implementing a persistent database for category mapping, the system "learns" user preferences across sessions, reducing manual categorization.
+* **Noise Reduction:** Unlike basic ledger tools, ParsePAY distinguishes between genuine market transactions and internal account settlements, providing an accurate view of spending.
 
 ---
 
-## Getting Started
+## ⚙️ Setup & Installation
 
 Follow these steps to set up and start the application on your machine.
 
 ### Prerequisites
-
 Ensure you have **Python 3.8+** installed on your system. You can verify this by running:
 ```bash
 python --version
 ```
 
----
-
-## Startup Steps (Windows)
+### Windows Setup
 
 Since the project source files are located in the `ASEP_2_Bank_Statement` directory, follow these steps from the root directory (`e:\Bank statement analysis`):
 
-### Step 1: Navigate to the Project Directory
-Open your terminal/command prompt and move into the project subfolder:
-```powershell
-cd ASEP_2_Bank_Statement
-```
+1. **Navigate to the Project Directory:**
+   ```powershell
+   cd ASEP_2_Bank_Statement
+   ```
 
-### Step 2: Activate the Virtual Environment
-An existing virtual environment (`venv`) is already present inside the project folder. Activate it by running:
-* **Command Prompt (cmd):**
-  ```cmd
-  venv\Scripts\activate
-  ```
-* **PowerShell:**
-  ```powershell
-  .\venv\Scripts\activate
-  ```
+2. **Activate the Virtual Environment:**
+   An existing virtual environment (`venv`) is already present inside the project folder. Activate it by running:
+   * **Command Prompt (cmd):**
+     ```cmd
+     venv\Scripts\activate
+     ```
+   * **PowerShell:**
+     ```powershell
+     .\venv\Scripts\activate
+     ```
+     *(If you get a script execution policy error in PowerShell, run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process` first)*
 
-> [!NOTE]
-> If you get a script execution policy error in PowerShell, you can run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process` first, or use the Command Prompt.
+3. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Step 3: Install Dependencies
-If you haven't installed the required Python packages yet (or want to make sure they are up-to-date), run:
-```bash
-pip install -r requirements.txt
-```
+4. **Run the Application:**
+   ```bash
+   python wsgi.py
+   ```
 
-### Step 4: Run the Application
-You can start the web server in one of two ways:
-
-#### Option A: Running the WSGI wrapper script (Recommended)
-```bash
-python wsgi.py
-```
-
-#### Option B: Running directly with Flask CLI
-* **Command Prompt (cmd):**
-  ```cmd
-  set FLASK_APP=extractpdf.py
-  set FLASK_ENV=development
-  flask run
-  ```
-* **PowerShell:**
-  ```powershell
-  $env:FLASK_APP="extractpdf.py"
-  $env:FLASK_ENV="development"
-  flask run
-  ```
-
----
-
-## Startup Steps (macOS / Linux)
+### macOS / Linux Setup
 
 If you are running on macOS or Linux, follow these commands from the root directory:
 
@@ -95,7 +99,7 @@ If you are running on macOS or Linux, follow these commands from the root direct
 
 ---
 
-## Accessing the Web Interface
+## 💻 Accessing the Web Interface
 
 Once the server has started, open your web browser and navigate to:
 ```
