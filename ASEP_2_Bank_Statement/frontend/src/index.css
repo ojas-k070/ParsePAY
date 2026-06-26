@@ -13,7 +13,7 @@
     --color-income: #10b981;
     --color-expense: #ef4444;
     --color-gold: #f59e0b;
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: color 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     --sidebar-width: 280px;
 }
 
@@ -23,7 +23,7 @@
     box-sizing: border-box;
 }
 
-body.dashboard-body {
+body {
     background-color: var(--bg-primary);
     background-image: 
         radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
@@ -50,6 +50,7 @@ body.dashboard-body {
     display: flex;
     min-height: 100vh;
     width: 100vw;
+    overflow-x: hidden; /* Prevent horizontal scroll when sidebar is closed */
 }
 
 /* Sidebar Styling */
@@ -64,6 +65,86 @@ body.dashboard-body {
     height: calc(100vh - 40px);
     position: sticky;
     top: 20px;
+    z-index: 1100;
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    
+    /* Hidden/closed by default */
+    margin-left: calc(-1 * var(--sidebar-width) - 20px);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.sidebar.open {
+    margin-left: 20px;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Sidebar Close Button */
+.sidebar-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    transition: var(--transition-smooth);
+    padding: 0;
+}
+.sidebar-close-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+body.light-theme .sidebar-close-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* Sidebar Overlay backdrop (disabled for content-pushing menu) */
+.sidebar-overlay {
+    display: none !important;
+}
+
+/* Floating Menu Toggle Button */
+.sidebar-toggle-btn {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.3rem;
+    transition: var(--transition-smooth);
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.sidebar-toggle-btn:hover {
+    transform: scale(1.05);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent-teal);
+    box-shadow: 0 4px 16px rgba(0, 242, 254, 0.2);
+}
+body.light-theme .sidebar-toggle-btn {
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+body.light-theme .sidebar-toggle-btn:hover {
+    background: rgba(0, 0, 0, 0.02);
+    border-color: var(--accent-teal);
+    box-shadow: 0 4px 16px rgba(13, 148, 136, 0.1);
 }
 
 .sidebar-header {
@@ -118,11 +199,37 @@ body.dashboard-body {
 }
 
 .nav-item:hover, .nav-item.active {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.04);
     color: var(--text-primary);
-    border-left: 3px solid var(--accent-teal);
-    padding-left: 13px;
+    padding-left: 20px;
 }
+
+.nav-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 0%;
+    background: var(--accent-teal);
+    transition: var(--transition-smooth);
+    border-radius: 0 4px 4px 0;
+}
+
+.nav-item:hover::before, .nav-item.active::before {
+    height: 50%;
+}
+
+.nav-item:hover .nav-icon {
+    transform: scale(1.15) rotate(-3deg);
+}
+
+.nav-icon {
+    transition: var(--transition-smooth);
+    display: inline-block;
+}
+
 
 .nav-icon {
     font-size: 1.1rem;
@@ -266,6 +373,17 @@ body.dashboard-body {
     justify-content: space-between;
     align-items: center;
     gap: 16px;
+    transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* When sidebar is closed (default), add padding for hamburger menu button */
+.dashboard-container:not(.sidebar-open) .top-bar {
+    padding-left: 68px;
+}
+
+/* When sidebar is open, reset to standard padding since hamburger button is hidden */
+.dashboard-container.sidebar-open .top-bar {
+    padding-left: 24px;
 }
 
 .top-bar h1 {
@@ -340,7 +458,21 @@ body.dashboard-body {
     gap: 16px;
     position: relative;
     overflow: hidden;
+    transition: var(--transition-smooth);
+    border: 1px solid var(--border-color);
 }
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+body.light-theme .stat-card:hover {
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    border-color: rgba(15, 23, 42, 0.12);
+}
+
 
 .stat-card::before {
     content: '';
@@ -438,7 +570,21 @@ body.dashboard-body {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    transition: var(--transition-smooth);
+    border: 1px solid var(--border-color);
 }
+
+.chart-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+body.light-theme .chart-card:hover {
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+    border-color: rgba(15, 23, 42, 0.1);
+}
+
 
 .chart-card h3 {
     font-family: 'Outfit', sans-serif;
@@ -767,6 +913,11 @@ body.dashboard-body {
     box-shadow: 0 6px 20px rgba(0, 242, 254, 0.4);
 }
 
+.primary-btn:active {
+    transform: scale(0.97) translateY(-1px);
+}
+
+
 /* Flash Messages Alert Box */
 #flash-messages {
     display: flex;
@@ -1090,13 +1241,11 @@ body.light-theme {
     --accent-teal: #0d9488;
     --accent-blue: #2563eb;
     --accent-purple: #7c3aed;
-}
-
-body.light-theme.dashboard-body {
     background-image: 
         radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
         radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.05) 0px, transparent 50%);
 }
+
 
 /* Float Theme Toggle Button */
 .theme-toggle-float {
@@ -1291,5 +1440,51 @@ body.light-theme .actions-dropdown-item:hover {
     background: rgba(0, 0, 0, 0.03);
     color: #0f172a;
 }
+
+/* Animated glowing background blobs for premium SaaS style */
+.bg-glow-blob {
+    position: fixed;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    filter: blur(70px);
+    z-index: -10;
+    opacity: 0.08;
+    pointer-events: none;
+    animation: float-blob 25s infinite alternate ease-in-out;
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+}
+.blob-1 {
+    background: var(--accent-teal);
+    top: -150px;
+    left: -150px;
+    animation-delay: 0s;
+}
+.blob-2 {
+    background: var(--accent-purple);
+    bottom: -150px;
+    right: -150px;
+    animation-delay: 6s;
+}
+.blob-3 {
+    background: var(--accent-blue);
+    top: 35%;
+    left: 60%;
+    animation-delay: 12s;
+}
+@keyframes float-blob {
+    0% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(60px, -80px) scale(1.15); }
+    66% { transform: translate(-40px, 40px) scale(0.9); }
+    100% { transform: translate(0, 0) scale(1); }
+}
+
+body.light-theme .bg-glow-blob {
+    opacity: 0.04;
+}
+
 
 

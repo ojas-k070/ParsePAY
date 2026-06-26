@@ -229,6 +229,20 @@ def train_classifier():
         print("ML_TRAIN: Error training Naive Bayes classifier:", e, flush=True)
         return False
 
+def train_classifier_in_background():
+    """Retrain the classifier in a background thread to prevent blocking requests."""
+    def bg_target(app_ctx):
+        with app_ctx:
+            try:
+                train_classifier()
+            except Exception as e:
+                print("ML_BG: Background classifier training failed:", e, flush=True)
+
+    import threading
+    app_ctx = app.app_context()
+    thread = threading.Thread(target=bg_target, args=(app_ctx,), daemon=True)
+    thread.start()
+
 _classifier = None
 
 def load_classifier():
@@ -373,11 +387,11 @@ def create_tables():
                         rsrcmgr = PDFResourceManager()
                         retstr = StringIO()
                         codec = 'utf-8'
-                        laparams = LAParams()
+                        laparams = LAParams(all_texts=True, detect_vertical=False, char_margin=50.0)
                         device = TextConverter(rsrcmgr, retstr, codec=codec, laparams=laparams)
                         fp = open(file_path, 'rb')
                         interpreter = PDFPageInterpreter(rsrcmgr, device)
-                        for page in PDFPage.get_pages(fp):
+                        for page in PDFPage.get_pages(fp, caching=False):
                             interpreter.process_page(page)
                         text = retstr.getvalue()
                         fp.close()
@@ -415,9 +429,12 @@ def login_required(view):
     @wraps(view)
     def wrapped_view(**kwargs):
         if g.user is None:
+            if request.path.startswith('/api/') or request.headers.get('Accept') == 'application/json':
+                return jsonify({'success': False, 'error': 'Unauthorized'}), 401
             return redirect('/login')
         return view(**kwargs)
     return wrapped_view
+
 
 # Allowed file check
 def allowed_file(filename):
@@ -498,8 +515,8 @@ def convert_pdf_to_txt(path, csv_path):
     codec = 'utf-8'
 
     laparams = LAParams(
-        all_texts=True, detect_vertical=True,
-        line_overlap=0.5, char_margin=1000.0,
+        all_texts=True, detect_vertical=False,
+        line_overlap=0.5, char_margin=50.0,
         line_margin=2.0, word_margin=2,
         boxes_flow=1
     )
@@ -508,7 +525,7 @@ def convert_pdf_to_txt(path, csv_path):
     interpreter = PDFPageInterpreter(rsrcmgr, device)
     password = ""
     maxpages = 0  # Process all pages
-    caching = True
+    caching = False
     pagenos = set()
     grouped_data = {}
 
@@ -567,18 +584,45 @@ def convert_pdf_to_txt(path, csv_path):
     retstr.close()
     return text, grouped_data
 
-@app.route('/login')
-def login():
-    if g.user is not None:
-        return redirect('/')
-    return render_template('login.html')
+@app.route('/api/auth/me')
+def auth_me():
+    if g.user is None:
+        return jsonify({'logged_in': False})
+    return jsonify({
+        'logged_in': True,
+        'user': {
+            'id': g.user.id,
+            'username': g.user.username,
+            'unique_id': g.user.unique_id
+        }
+    })
 
-@app.route('/create-profile', methods=['POST'])
-def create_profile():
-    username = request.form.get('username', '').strip()
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    data = request.get_json() or {}
+    unique_id = data.get('user_id', '').strip().upper()
+    if not unique_id:
+        return jsonify({'success': False, 'error': 'User ID cannot be empty'}), 400
+        
+    user = User.query.filter_by(unique_id=unique_id).first()
+    if user:
+        session['user_id'] = user.id
+        return jsonify({
+            'success': True,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'unique_id': user.unique_id
+            }
+        })
+    return jsonify({'success': False, 'error': 'Invalid User ID. Please check and try again.'}), 404
+
+@app.route('/api/auth/register', methods=['POST'])
+def api_register():
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
     if not username:
-        flash('Username cannot be empty', 'error')
-        return redirect('/login')
+        return jsonify({'success': False, 'error': 'Username cannot be empty'}), 400
         
     unique_id = generate_unique_user_id()
     new_user = User(username=username, unique_id=unique_id)
@@ -586,46 +630,50 @@ def create_profile():
     db.session.commit()
     
     session['user_id'] = new_user.id
-    flash(f'Profile created successfully! Your unique User ID is: {unique_id}. Save this to login from other devices.', 'success')
-    return redirect('/')
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': new_user.id,
+            'username': new_user.username,
+            'unique_id': new_user.unique_id
+        }
+    })
 
-@app.route('/login-profile', methods=['POST'])
-def login_profile():
-    unique_id = request.form.get('user_id', '').strip().upper()
-    if not unique_id:
-        flash('User ID cannot be empty', 'error')
-        return redirect('/login')
-        
-    user = User.query.filter_by(unique_id=unique_id).first()
-    if user:
-        session['user_id'] = user.id
-        flash(f'Welcome back, {user.username}!', 'success')
-        return redirect('/')
-    else:
-        flash('Invalid User ID. Please check and try again.', 'error')
-        return redirect('/login')
-
-@app.route('/logout')
-def logout():
+@app.route('/api/auth/logout', methods=['POST', 'GET'])
+def api_logout():
     session.clear()
-    flash('Logged out successfully.', 'success')
-    return redirect('/login')
+    return jsonify({'success': True})
 
-@app.route('/')
+@app.route('/api/statements')
 @login_required
-def index():
-    recent_files = UploadedFile.query.filter_by(user_id=g.user.id).order_by(UploadedFile.upload_time.desc()).limit(10).all()
-    return render_template('upload.html', recent_files=recent_files)
+def api_statements():
+    recent_files = UploadedFile.query.filter_by(user_id=g.user.id).order_by(UploadedFile.upload_time.desc()).all()
+    files_list = [{
+        'id': rf.id,
+        'filename': rf.filename,
+        'upload_time': rf.upload_time.strftime('%Y-%m-%d %H:%M:%S') if rf.upload_time else '',
+        'opening_balance': rf.opening_balance,
+        'closing_balance': rf.closing_balance
+    } for rf in recent_files]
+    return jsonify({'success': True, 'statements': files_list})
 
+
+@app.route('/api/upload', methods=['POST'])
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
+    is_api = request.path.startswith('/api/') or request.headers.get('Accept') == 'application/json'
+
     if 'file' not in request.files:
+        if is_api:
+            return jsonify({'success': False, 'error': 'No file part in the request'}), 400
         flash('No file selected', 'error')
         return redirect('/')
 
     file = request.files['file']
     if file.filename == '':
+        if is_api:
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
         flash('No file selected', 'error')
         return redirect('/')
 
@@ -649,6 +697,10 @@ def upload_file():
         db.session.add(db_file)
         db.session.commit()
 
+        # Query all custom merchant mappings for the user at once to avoid N+1 queries
+        user_mappings = SavedMapping.query.filter_by(user_id=g.user.id).all()
+        mappings_dict = {m.merchant.upper(): m.category for m in user_mappings}
+
         # Save individual transactions to database
         for date_key, transactions in grouped_data.items():
             for tx in transactions:
@@ -664,11 +716,9 @@ def upload_file():
                     
                 # Hierarchical Categorization Pipeline
                 merchant_key = get_merchant_key(particulars)
-                mapping = SavedMapping.query.filter_by(user_id=g.user.id, merchant=merchant_key).first()
+                category = mappings_dict.get(merchant_key)
                 
-                if mapping:
-                    category = mapping.category
-                else:
+                if not category:
                     pred_cat, confidence = predict_category(particulars)
                     if pred_cat and confidence >= 0.70:
                         category = pred_cat
@@ -687,34 +737,27 @@ def upload_file():
                 db.session.add(db_tx)
         db.session.commit()
         
-        # Trigger retraining with new bootstrapped or hard-mapped transactions
+        # Trigger retraining with new bootstrapped or hard-mapped transactions in background
         try:
-            train_classifier()
+            train_classifier_in_background()
         except Exception as e:
-            print("ML_UPLOAD: Error training model after upload:", e, flush=True)
+            print("ML_UPLOAD: Error launching model training after upload:", e, flush=True)
 
         excel_filename = f"{filename}.xlsx"
         excel_path = os.path.join(app.config['PROCESSED_FOLDER'], excel_filename)
         df = pd.read_csv(csv_path)
         df.to_excel(excel_path, index=None, header=True)
 
+        if is_api:
+            return jsonify({'success': True, 'file_id': db_file.id})
         flash('File processed successfully!', 'success')
         return redirect(f'/dashboard/{db_file.id}')
 
+    if is_api:
+        return jsonify({'success': False, 'error': 'Invalid file format. Only PDF statements are allowed.'}), 400
     flash('Invalid file format', 'error')
     return redirect('/')
 
-@app.route('/dashboard/<int:file_id>')
-@login_required
-def dashboard(file_id):
-    file = UploadedFile.query.get_or_404(file_id)
-    if file.user_id != g.user.id:
-        flash('Unauthorized access.', 'error')
-        return redirect('/')
-        
-    recent_files = UploadedFile.query.filter_by(user_id=g.user.id).order_by(UploadedFile.upload_time.desc()).limit(10).all()
-    excel_filename = f"{file.filename}.xlsx"
-    return render_template('dashboard.html', file=file, recent_files=recent_files, excel_filename=excel_filename)
 
 @app.route('/api/dashboard-data/<int:file_id>')
 @login_required
@@ -815,11 +858,11 @@ def update_category():
         
     db.session.commit()
     
-    # Retrain ML model with new data
+    # Retrain ML model with new data in background
     try:
-        train_classifier()
+        train_classifier_in_background()
     except Exception as e:
-        print("ML_ROUTE: Error retraining model after manual update:", e, flush=True)
+        print("ML_ROUTE: Error launching background model training after manual update:", e, flush=True)
         
     return jsonify({'success': True})
 
@@ -846,11 +889,15 @@ def swap_transaction_amount():
     
     return jsonify({'success': True})
 
+@app.route('/api/delete-statement/<int:file_id>', methods=['POST', 'DELETE'])
 @app.route('/delete-statement/<int:file_id>', methods=['POST'])
 @login_required
 def delete_statement(file_id):
+    is_api = request.path.startswith('/api/') or request.headers.get('Accept') == 'application/json'
     file = UploadedFile.query.get_or_404(file_id)
     if file.user_id != g.user.id:
+        if is_api:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
         flash('Unauthorized action.', 'error')
         return redirect('/')
     
@@ -878,8 +925,12 @@ def delete_statement(file_id):
             
     db.session.delete(file)
     db.session.commit()
+    
+    if is_api:
+        return jsonify({'success': True})
     flash('Statement deleted successfully!', 'success')
     return redirect('/')
+
 
 @app.route('/download/<filename>')
 @login_required
@@ -908,11 +959,11 @@ def debug_text(file_id):
     rsrcmgr = PDFResourceManager()
     retstr = StringIO()
     codec = 'utf-8'
-    laparams = LAParams()
+    laparams = LAParams(all_texts=True, detect_vertical=False, char_margin=50.0)
     device = TextConverter(rsrcmgr, retstr, codec=codec, laparams=laparams)
     fp = open(file_path, 'rb')
     interpreter = PDFPageInterpreter(rsrcmgr, device)
-    for page in PDFPage.get_pages(fp):
+    for page in PDFPage.get_pages(fp, caching=False):
         interpreter.process_page(page)
     text = retstr.getvalue()
     fp.close()
@@ -945,5 +996,17 @@ def debug_text(file_id):
             
     return "<pre>" + "\n".join(output_lines) + "</pre>"
 
+from flask import send_from_directory, abort
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_spa(path):
+    if path.startswith('api/') or path.startswith('upload') or path.startswith('download/') or path.startswith('delete-statement/') or path.startswith('debug-text/'):
+        abort(404)
+    if os.path.exists(os.path.join(app.static_folder, 'index.html')):
+        return send_from_directory(app.static_folder, 'index.html')
+    return "React SPA build files not found in the 'static' folder. Please build the frontend using 'npm run build' inside 'frontend' directory or access via Vite dev server at http://localhost:5173"
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
