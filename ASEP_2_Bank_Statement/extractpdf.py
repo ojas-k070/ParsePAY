@@ -10,6 +10,9 @@ from functools import wraps
 from io import StringIO
 
 import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 from flask import Flask, render_template, request, redirect, flash, send_file, jsonify, session, g
 from flask_sqlalchemy import SQLAlchemy
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
@@ -29,6 +32,14 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 # Ensure folders exist
+@app.after_request
+def add_header(response):
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '-1'
+    return response
+
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
 os.makedirs(app.instance_path, exist_ok=True)
@@ -584,6 +595,275 @@ def convert_pdf_to_txt(path, csv_path):
     retstr.close()
     return text, grouped_data
 
+def generate_excel_report(file_record, excel_path):
+    wb = Workbook()
+    
+    # ------------------ SHEET 1: TRANSACTIONS ------------------
+    ws_tx = wb.active
+    ws_tx.title = "Transactions"
+    ws_tx.views.sheetView[0].showGridLines = True
+    
+    # Fonts
+    font_title = Font(name="Calibri", size=16, bold=True, color="1F4E79")
+    font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    font_bold = Font(name="Calibri", size=11, bold=True)
+    font_regular = Font(name="Calibri", size=11)
+    
+    # Fills
+    fill_title = PatternFill(start_color="E6F0FA", end_color="E6F0FA", fill_type="solid")
+    fill_header = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    fill_zebra = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    fill_summary_header = PatternFill(start_color="D1E2F2", end_color="D1E2F2", fill_type="solid")
+    
+    # Borders
+    thin_border_side = Side(style='thin', color='CBD5E1')
+    thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    double_bottom_border = Border(top=thin_border_side, bottom=Side(style='double', color='1F4E79'))
+    
+    # Alignments
+    align_center = Alignment(horizontal='center', vertical='center')
+    align_left = Alignment(horizontal='left', vertical='center')
+    align_right = Alignment(horizontal='right', vertical='center')
+    
+    # 1. Title Block
+    ws_tx.merge_cells("A1:F2")
+    title_cell = ws_tx["A1"]
+    title_cell.value = "ParsePAY Financial Statement Report"
+    title_cell.font = font_title
+    title_cell.alignment = align_center
+    
+    for r in range(1, 3):
+        for c in range(1, 7):
+            cell = ws_tx.cell(row=r, column=c)
+            cell.fill = fill_title
+            
+    # 2. Metadata Cards (Summary Block)
+    ws_tx.merge_cells("A4:C4")
+    ws_tx["A4"].value = "STATEMENT METADATA"
+    ws_tx["A4"].font = Font(name="Calibri", size=10, bold=True, color="1F4E79")
+    ws_tx["A4"].fill = fill_summary_header
+    ws_tx["A4"].alignment = align_center
+    
+    ws_tx["A5"].value = "Statement Name:"
+    ws_tx["B5"].value = file_record.filename
+    ws_tx["A6"].value = "Opening Balance:"
+    ws_tx["B6"].value = file_record.opening_balance
+    ws_tx["B6"].number_format = '₹#,##0.00'
+    ws_tx["A7"].value = "Closing Balance:"
+    ws_tx["B7"].value = file_record.closing_balance
+    ws_tx["B7"].number_format = '₹#,##0.00'
+    
+    ws_tx.merge_cells("E4:F4")
+    ws_tx["E4"].value = "RECONCILIATION SUMMARY"
+    ws_tx["E4"].font = Font(name="Calibri", size=10, bold=True, color="1F4E79")
+    ws_tx["E4"].fill = fill_summary_header
+    ws_tx["E4"].alignment = align_center
+    
+    transactions = Transaction.query.filter_by(file_id=file_record.id).order_by(Transaction.id).all()
+    total_withdrawals = sum(tx.withdrawal for tx in transactions)
+    total_deposits = sum(tx.deposit for tx in transactions)
+    net_savings = total_deposits - total_withdrawals
+    
+    ws_tx["E5"].value = "Total Deposits (Cr):"
+    ws_tx["F5"].value = total_deposits
+    ws_tx["F5"].number_format = '₹#,##0.00'
+    ws_tx["F5"].font = font_bold
+    
+    ws_tx["E6"].value = "Total Withdrawals (Dr):"
+    ws_tx["F6"].value = total_withdrawals
+    ws_tx["F6"].number_format = '₹#,##0.00'
+    ws_tx["F6"].font = font_bold
+    
+    ws_tx["E7"].value = "Net Flow:"
+    ws_tx["F7"].value = net_savings
+    ws_tx["F7"].number_format = '₹#,##0.00'
+    ws_tx["F7"].font = font_bold
+    if net_savings >= 0:
+        ws_tx["F7"].font = Font(name="Calibri", size=11, bold=True, color="10B981")
+    else:
+        ws_tx["F7"].font = Font(name="Calibri", size=11, bold=True, color="EF4444")
+        
+    for r in range(4, 8):
+        for c in [1, 2, 3, 5, 6]:
+            cell = ws_tx.cell(row=r, column=c)
+            if r > 4:
+                if c in (1, 5):
+                    cell.font = font_bold
+                else:
+                    if cell.font != font_bold and cell.font.color is None:
+                        cell.font = font_regular
+            cell.border = thin_border
+            if r == 4:
+                cell.fill = fill_summary_header
+                
+    # 3. Main Data Table
+    start_row = 9
+    headers = ["S.No.", "Date", "Particulars", "Category", "Withdrawals (Dr)", "Deposits (Cr)"]
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws_tx.cell(row=start_row, column=col_idx)
+        cell.value = h
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = align_center if col_idx in (1, 2, 4) else (align_right if col_idx in (5, 6) else align_left)
+        cell.border = thin_border
+        
+    current_row = start_row + 1
+    for idx, tx in enumerate(transactions, 1):
+        ws_tx.cell(row=current_row, column=1, value=idx).alignment = align_center
+        ws_tx.cell(row=current_row, column=2, value=tx.date).alignment = align_center
+        ws_tx.cell(row=current_row, column=3, value=tx.particulars).alignment = align_left
+        ws_tx.cell(row=current_row, column=4, value=tx.category).alignment = align_center
+        
+        w_cell = ws_tx.cell(row=current_row, column=5, value=tx.withdrawal)
+        w_cell.number_format = '₹#,##0.00'
+        w_cell.alignment = align_right
+        
+        d_cell = ws_tx.cell(row=current_row, column=6, value=tx.deposit)
+        d_cell.number_format = '₹#,##0.00'
+        d_cell.alignment = align_right
+        
+        row_fill = fill_zebra if idx % 2 == 0 else PatternFill(fill_type=None)
+        for col_idx in range(1, 7):
+            cell = ws_tx.cell(row=current_row, column=col_idx)
+            cell.font = font_regular
+            if row_fill.fill_type:
+                cell.fill = row_fill
+            cell.border = thin_border
+            
+        current_row += 1
+        
+    # Totals Row
+    total_row = current_row
+    ws_tx.cell(row=total_row, column=2, value="Total").font = font_bold
+    ws_tx.cell(row=total_row, column=2).alignment = align_center
+    
+    w_sum = ws_tx.cell(row=total_row, column=5, value=f"=SUM(E{start_row+1}:E{total_row-1})")
+    w_sum.font = font_bold
+    w_sum.number_format = '₹#,##0.00'
+    w_sum.alignment = align_right
+    w_sum.border = double_bottom_border
+    
+    d_sum = ws_tx.cell(row=total_row, column=6, value=f"=SUM(F{start_row+1}:F{total_row-1})")
+    d_sum.font = font_bold
+    d_sum.number_format = '₹#,##0.00'
+    d_sum.alignment = align_right
+    d_sum.border = double_bottom_border
+    
+    for c in (1, 3, 4):
+        ws_tx.cell(row=total_row, column=c).border = double_bottom_border
+        
+    for col in ws_tx.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            if cell.row in (1, 2, 4):
+                continue
+            val_str = str(cell.value or '')
+            if cell.number_format and ('₹' in cell.number_format or '#' in cell.number_format) and isinstance(cell.value, (int, float)):
+                val_str = f"Rs. {cell.value:,.2f}"
+            if len(val_str) > max_len:
+                max_len = len(val_str)
+        ws_tx.column_dimensions[col_letter].width = max(max_len + 3, 12)
+        
+    ws_tx.column_dimensions['C'].width = max(ws_tx.column_dimensions['C'].width, 35)
+    
+    # ------------------ SHEET 2: CATEGORY BREAKDOWN ------------------
+    ws_cat = wb.create_sheet(title="Category Summary")
+    ws_cat.views.sheetView[0].showGridLines = True
+    
+    ws_cat.merge_cells("A1:D2")
+    cat_title = ws_cat["A1"]
+    cat_title.value = "Category Spending Analysis"
+    cat_title.font = font_title
+    cat_title.alignment = align_center
+    
+    for r in range(1, 3):
+        for c in range(1, 5):
+            ws_cat.cell(row=r, column=c).fill = fill_title
+            
+    cat_headers = ["Category", "Total Spent (Dr)", "Transaction Count", "% of Total Spent"]
+    for col_idx, h in enumerate(cat_headers, 1):
+        cell = ws_cat.cell(row=4, column=col_idx)
+        cell.value = h
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = align_center if col_idx in (3, 4) else (align_right if col_idx == 2 else align_left)
+        cell.border = thin_border
+        
+    category_data = {}
+    for tx in transactions:
+        if tx.category not in category_data:
+            category_data[tx.category] = {"spent": 0.0, "count": 0}
+        category_data[tx.category]["count"] += 1
+        if tx.withdrawal > 0:
+            category_data[tx.category]["spent"] += tx.withdrawal
+            
+    sorted_categories = sorted(category_data.items(), key=lambda x: x[1]["spent"], reverse=True)
+    
+    row_idx = 5
+    for idx, (cat_name, cat_info) in enumerate(sorted_categories, 1):
+        ws_cat.cell(row=row_idx, column=1, value=cat_name).alignment = align_left
+        
+        s_cell = ws_cat.cell(row=row_idx, column=2, value=cat_info["spent"])
+        s_cell.number_format = '₹#,##0.00'
+        s_cell.alignment = align_right
+        
+        ws_cat.cell(row=row_idx, column=3, value=cat_info["count"]).alignment = align_center
+        
+        p_cell = ws_cat.cell(row=row_idx, column=4, value=f"=B{row_idx}/SUM(B5:B{4+len(sorted_categories)})")
+        p_cell.number_format = '0.0%'
+        p_cell.alignment = align_center
+        
+        row_fill = fill_zebra if idx % 2 == 0 else PatternFill(fill_type=None)
+        for col_idx in range(1, 5):
+            cell = ws_cat.cell(row=row_idx, column=col_idx)
+            cell.font = font_regular
+            cell.border = thin_border
+            if row_fill.fill_type:
+                cell.fill = row_fill
+                
+        row_idx += 1
+        
+    cat_total_row = row_idx
+    ws_cat.cell(row=cat_total_row, column=1, value="Total Spending").font = font_bold
+    ws_cat.cell(row=cat_total_row, column=1).alignment = align_left
+    
+    tot_spent = ws_cat.cell(row=cat_total_row, column=2, value=f"=SUM(B5:B{cat_total_row-1})")
+    tot_spent.font = font_bold
+    tot_spent.number_format = '₹#,##0.00'
+    tot_spent.alignment = align_right
+    tot_spent.border = double_bottom_border
+    
+    tot_count = ws_cat.cell(row=cat_total_row, column=3, value=f"=SUM(C5:C{cat_total_row-1})")
+    tot_count.font = font_bold
+    tot_count.alignment = align_center
+    tot_count.border = double_bottom_border
+    
+    tot_pct = ws_cat.cell(row=cat_total_row, column=4, value=f"=SUM(D5:D{cat_total_row-1})")
+    tot_pct.font = font_bold
+    tot_pct.number_format = '0.0%'
+    tot_pct.alignment = align_center
+    tot_pct.border = double_bottom_border
+    
+    ws_cat.cell(row=cat_total_row, column=1).border = double_bottom_border
+    
+    for col in ws_cat.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            if cell.row in (1, 2):
+                continue
+            val_str = str(cell.value or '')
+            if cell.number_format and '%' in cell.number_format:
+                val_str = "100.0%"
+            elif cell.number_format and '₹' in cell.number_format and isinstance(cell.value, (int, float)):
+                val_str = f"Rs. {cell.value:,.2f}"
+            if len(val_str) > max_len:
+                max_len = len(val_str)
+        ws_cat.column_dimensions[col_letter].width = max(max_len + 3, 15)
+        
+    wb.save(excel_path)
+
 @app.route('/api/auth/me')
 def auth_me():
     if g.user is None:
@@ -745,8 +1025,13 @@ def upload_file():
 
         excel_filename = f"{filename}.xlsx"
         excel_path = os.path.join(app.config['PROCESSED_FOLDER'], excel_filename)
-        df = pd.read_csv(csv_path)
-        df.to_excel(excel_path, index=None, header=True)
+        try:
+            generate_excel_report(db_file, excel_path)
+            print(f"EXCEL_GEN: Created initial Excel report for {filename}", flush=True)
+        except Exception as e:
+            print(f"EXCEL_GEN: Error creating initial Excel: {e}", flush=True)
+            df = pd.read_csv(csv_path)
+            df.to_excel(excel_path, index=None, header=True)
 
         if is_api:
             return jsonify({'success': True, 'file_id': db_file.id})
@@ -942,12 +1227,23 @@ def download_file(filename):
     if not file_record:
         # Fallback search inside the user's files
         user_files = UploadedFile.query.filter_by(user_id=g.user.id).all()
-        has_access = any(f"{uf.filename}.xlsx" == filename for uf in user_files)
-        if not has_access:
+        for uf in user_files:
+            if f"{uf.filename}.xlsx" == filename:
+                file_record = uf
+                break
+        if not file_record:
             flash('Access to this download is restricted.', 'error')
             return redirect('/')
             
     file_path = os.path.join(app.config['PROCESSED_FOLDER'], filename)
+    
+    # Dynamically regenerate Excel file before serving to include latest category edits
+    try:
+        generate_excel_report(file_record, file_path)
+        print(f"EXCEL_GEN: Dynamically regenerated Excel report for {filename}", flush=True)
+    except Exception as e:
+        print(f"EXCEL_GEN: Error dynamically regenerating Excel for {filename}: {e}", flush=True)
+        
     return send_file(file_path, as_attachment=True)
 
 @app.route('/debug-text/<int:file_id>')

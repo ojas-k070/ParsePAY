@@ -59,11 +59,13 @@ const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingTxId, setUpdatingTxId] = useState(null);
   const [activeDropdownId, setActiveDropdownId] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [filterTableByCategory, setFilterTableByCategory] = useState(false);
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/dashboard-data/${fileId}`);
+      const res = await fetch(`/api/dashboard-data/${fileId}?t=${Date.now()}`);
       if (res.status === 401 || res.status === 403) {
         setError('Unauthorized access. Please login.');
         return;
@@ -118,7 +120,7 @@ const Dashboard = () => {
       const result = await res.json();
       if (result.success) {
         // Refresh data
-        const refreshRes = await fetch(`/api/dashboard-data/${fileId}`);
+        const refreshRes = await fetch(`/api/dashboard-data/${fileId}?t=${Date.now()}`);
         const refreshJson = await refreshRes.json();
         setData(refreshJson);
       } else {
@@ -144,7 +146,7 @@ const Dashboard = () => {
       const result = await res.json();
       if (result.success) {
         // Refresh data
-        const refreshRes = await fetch(`/api/dashboard-data/${fileId}`);
+        const refreshRes = await fetch(`/api/dashboard-data/${fileId}?t=${Date.now()}`);
         const refreshJson = await refreshRes.json();
         setData(refreshJson);
       } else {
@@ -156,17 +158,58 @@ const Dashboard = () => {
     }
   };
 
-  // Filtered transactions list based on search query
+  // Filtered transactions list based on search query and category filter
   const filteredTransactions = useMemo(() => {
     if (!data || !data.transactions) return [];
     const query = searchQuery.toLowerCase().trim();
-    if (!query) return data.transactions;
-    return data.transactions.filter(tx => 
-      tx.particulars.toLowerCase().includes(query) ||
-      tx.category.toLowerCase().includes(query) ||
-      tx.date.toLowerCase().includes(query)
-    );
-  }, [data, searchQuery]);
+    
+    return data.transactions.filter(tx => {
+      const matchesSearch = !query || 
+        tx.particulars.toLowerCase().includes(query) ||
+        tx.category.toLowerCase().includes(query) ||
+        tx.date.toLowerCase().includes(query);
+        
+      const matchesCategory = !filterTableByCategory || tx.category === selectedCategory;
+      
+      return matchesSearch && matchesCategory;
+    });
+  }, [data, searchQuery, selectedCategory, filterTableByCategory]);
+
+  // Set default selected category to the one with the highest spending
+  useEffect(() => {
+    if (data && data.category_totals && !selectedCategory) {
+      const categoriesWithSpending = Object.keys(data.category_totals)
+        .filter(cat => data.category_totals[cat] > 0);
+        
+      if (categoriesWithSpending.length > 0) {
+        const highestCat = categoriesWithSpending.reduce((a, b) => 
+          data.category_totals[a] > data.category_totals[b] ? a : b
+        );
+        setSelectedCategory(highestCat);
+      } else if (CATEGORIES.length > 0) {
+        setSelectedCategory(CATEGORIES[0]);
+      }
+    }
+  }, [data, selectedCategory]);
+
+  // Spend summary notification bar statistics
+  const spendSummaryStats = useMemo(() => {
+    if (!data) return { totalCredited: 0, categoryDebited: 0, percentage: '0.00' };
+    
+    const totalCredited = data.total_deposits || 0;
+    
+    const categoryDebited = filteredTransactions
+      .filter(tx => tx.category === selectedCategory)
+      .reduce((sum, tx) => sum + (tx.withdrawal || 0), 0);
+      
+    const percentage = totalCredited > 0 ? (categoryDebited / totalCredited) * 100 : 0;
+    
+    return {
+      totalCredited,
+      categoryDebited,
+      percentage: percentage.toFixed(2)
+    };
+  }, [data, filteredTransactions, selectedCategory]);
 
   // Sort categories by count descending
   const sortedCategoryCounts = useMemo(() => {
@@ -385,6 +428,43 @@ const Dashboard = () => {
                 </a>
               </div>
             </header>
+
+            {/* Dynamic Spend Summary Notification Bar */}
+            <div className="spend-summary-bar glass">
+              <div className="spend-summary-content">
+                <span className="spend-summary-icon">💡</span>
+                <span className="spend-summary-text">
+                  Out of your total credited amount of{' '}
+                  <strong className="highlight-credited">₹{formatMoney(spendSummaryStats.totalCredited)}</strong>
+                  , you spent{' '}
+                  <strong className="highlight-debited">₹{formatMoney(spendSummaryStats.categoryDebited)}</strong>{' '}
+                  (<strong className="highlight-percentage">{spendSummaryStats.percentage}%</strong>) on{' '}
+                  <select
+                    className="spend-summary-select"
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                  >
+                    {CATEGORIES.map((cat, i) => (
+                      <option key={i} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                  .
+                </span>
+              </div>
+              <div className="spend-summary-actions">
+                <label className="filter-toggle-label">
+                  <input
+                    type="checkbox"
+                    className="filter-toggle-checkbox"
+                    checked={filterTableByCategory}
+                    onChange={(e) => setFilterTableByCategory(e.target.checked)}
+                  />
+                  Filter list by this category
+                </label>
+              </div>
+            </div>
 
             {/* Stat Cards */}
             <section className="stats-grid">
